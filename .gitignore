@@ -1,0 +1,4 @@
+rewrite_history.sh
+*.pyc
+__pycache__/
+.env
