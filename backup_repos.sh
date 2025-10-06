@@ -23,13 +23,15 @@ for repo in "$BASE_DIR"/*; do
         
         # Create bundle (includes all branches, tags, etc.)
         cd "$repo"
-        git bundle create "$BACKUP_DIR/${repo_name}.bundle" --all
-        
-        # Also create a tar backup
-        cd "$BASE_DIR"
-        tar -czf "$BACKUP_DIR/${repo_name}.tar.gz" "$repo_name"
-        
-        echo "  ✓ Saved to $BACKUP_DIR/${repo_name}.*"
+        if git bundle create "$BACKUP_DIR/${repo_name}.bundle" --all 2>/dev/null; then
+            # Also create a tar backup
+            cd "$BASE_DIR"
+            tar -czf "$BACKUP_DIR/${repo_name}.tar.gz" "$repo_name" 2>/dev/null
+            
+            echo "  ✓ Saved to $BACKUP_DIR/${repo_name}.*"
+        else
+            echo "  ⚠️  Skipped (invalid git repo)"
+        fi
     fi
 done
 
