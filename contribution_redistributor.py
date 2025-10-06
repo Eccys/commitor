@@ -217,8 +217,8 @@ class ContributionRedistributor:
         
         print("\n" + "="*60)
     
-    def print_redistribution_plan(self, plan):
-        """Print the redistribution plan."""
+    def print_redistribution_plan(self, plan, original_date_counts):
+        """Print the redistribution plan with detailed before/after comparison."""
         print("\n" + "="*60)
         print("REDISTRIBUTION PLAN")
         print("="*60)
@@ -241,11 +241,91 @@ class ContributionRedistributor:
         print(f"  Standard deviation: {new_std:.2f}")
         print(f"  Range: {min(counts)} - {max(counts)}")
         
-        print("\n📅 Sample of new distribution (first 10 days):")
-        for date in sorted(list(by_new_date.keys())[:10]):
-            print(f"  {date}: {len(by_new_date[date])} commits")
+        # Show newly added green days
+        all_dates = sorted(by_new_date.keys())
+        first_date = all_dates[0]
+        last_date = all_dates[-1]
+        
+        blank_days_before = []
+        current = first_date
+        while current <= last_date:
+            if current not in original_date_counts or original_date_counts[current] == 0:
+                blank_days_before.append(current)
+            current += timedelta(days=1)
+        
+        newly_green_days = [date for date in by_new_date.keys() 
+                           if date not in original_date_counts or original_date_counts[date] == 0]
+        
+        print(f"\n🟩 NEW GREEN DAYS (was blank, now has commits):")
+        print(f"  Total: {len(newly_green_days)} days")
+        if newly_green_days:
+            print(f"\n  Sample of newly added days:")
+            for date in sorted(newly_green_days)[:15]:
+                day_name = date.strftime('%a')
+                weekend = "🎮 WEEKEND" if date.weekday() >= 5 else ""
+                print(f"    {date} ({day_name}): {len(by_new_date[date])} commits {weekend}")
+            
+            if len(newly_green_days) > 15:
+                print(f"    ... and {len(newly_green_days) - 15} more days")
+        
+        print(f"\n⬜ BLANK DAYS REMAINING:")
+        remaining_blank = [date for date in blank_days_before if date not in by_new_date]
+        print(f"  Total: {len(remaining_blank)} days")
+        if remaining_blank and len(remaining_blank) <= 10:
+            for date in remaining_blank[:10]:
+                print(f"    {date}")
         
         print("\n" + "="*60)
+    
+    def save_detailed_log(self, plan, date_counts, output_file='redistribution_log.txt'):
+        """Save detailed before/after log to file."""
+        by_new_date = defaultdict(list)
+        for commit_hash, info in plan.items():
+            by_new_date[info['new_date'].date()].append(info)
+        
+        all_dates = sorted(by_new_date.keys())
+        first_date = all_dates[0]
+        last_date = all_dates[-1]
+        
+        with open(output_file, 'w') as f:
+            f.write("GitHub Contribution Redistribution Log\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("="*70 + "\n\n")
+            
+            f.write("BEFORE REDISTRIBUTION:\n")
+            f.write("-" * 70 + "\n")
+            current = first_date
+            while current <= last_date:
+                count = date_counts.get(current, 0)
+                status = "✓" if count > 0 else "✗"
+                day_name = current.strftime('%a')
+                f.write(f"{status} {current} ({day_name:3s}): {count:2d} commits\n")
+                current += timedelta(days=1)
+            
+            f.write("\n" + "="*70 + "\n\n")
+            f.write("AFTER REDISTRIBUTION:\n")
+            f.write("-" * 70 + "\n")
+            current = first_date
+            while current <= last_date:
+                new_count = len(by_new_date.get(current, []))
+                old_count = date_counts.get(current, 0)
+                day_name = current.strftime('%a')
+                weekend = " [WEEKEND]" if current.weekday() >= 5 else ""
+                
+                if old_count == 0 and new_count > 0:
+                    status = "🟩 NEW"
+                elif new_count > 0:
+                    status = "✓    "
+                else:
+                    status = "✗    "
+                
+                change = f"(+{new_count - old_count})" if new_count != old_count else ""
+                f.write(f"{status} {current} ({day_name:3s}): {new_count:2d} commits {change}{weekend}\n")
+                current += timedelta(days=1)
+            
+            f.write("\n" + "="*70 + "\n")
+        
+        print(f"\n📝 Detailed log saved to: {output_file}")
     
     def generate_rewrite_script(self, plan, output_file='rewrite_history.sh'):
         """Generate a bash script to rewrite git history."""
@@ -339,7 +419,10 @@ class ContributionRedistributor:
             print("❌ Could not create redistribution plan!")
             return
         
-        self.print_redistribution_plan(plan)
+        self.print_redistribution_plan(plan, date_counts)
+        
+        # Save detailed log
+        self.save_detailed_log(plan, date_counts)
         
         # Generate rewrite script
         self.generate_rewrite_script(plan)
