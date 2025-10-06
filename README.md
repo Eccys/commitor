@@ -99,6 +99,20 @@ Automatically detects your GitHub email from `git config user.email` and **only 
 
 This creates a realistic activity pattern where you appear more active on weekends!
 
+### 📊 Detailed Before/After Logging
+Generates `redistribution_log.txt` with:
+- ✅ Complete before/after comparison for every day
+- 🟩 **NEW GREEN DAYS** clearly marked (was blank, now has commits)
+- ⬜ Remaining blank days
+- 🎮 Weekend indicators
+- Commit count changes (+X) for each day
+
+Example:
+```
+✗ 2024-08-17 (Sat):  0 commits     BEFORE
+🟩 NEW 2024-08-17 (Sat):  8 commits (+8) [WEEKEND]     AFTER
+```
+
 ## Example Output
 
 ```
