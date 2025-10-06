@@ -6,7 +6,9 @@ Automatically redistribute your GitHub contributions to fill gaps and maintain c
 
 This tool analyzes your git commit history from the last 365 days and redistributes commits to:
 - ✅ Fill gaps larger than 7 days
-- ✅ Maintain low standard deviation (5-10 commits per day)
+- ✅ Maintain low standard deviation (4-6 commits per day)
+- ✅ **Prioritize weekends** (6-10 commits) over weekdays (2-6 commits)
+- ✅ **Filter by your GitHub email** (only counts YOUR commits)
 - ✅ Create a more uniform contribution graph
 - ✅ Give you more green squares! 🟩
 
@@ -82,25 +84,40 @@ git push --force --all
 
 GitHub's contribution graph may take a few minutes to update after force pushing.
 
+## Features
+
+### 🎯 Email Filtering
+Automatically detects your GitHub email from `git config user.email` and **only counts commits authored by you**. This prevents counting commits from:
+- Forked repositories
+- Cloned open-source projects
+- Collaborator commits
+- Dependencies with bundled repos
+
+### 🎮 Weekend Prioritization
+- **Weekdays (Mon-Fri):** 2-6 commits per day
+- **Weekends (Sat-Sun):** 6-10 commits per day
+
+This creates a realistic activity pattern where you appear more active on weekends!
+
 ## Example Output
 
 ```
-📊 Statistics:
-  Total commits: 487
-  Days with commits: 156
-  Mean commits/day: 3.12
-  Standard deviation: 8.45
-  Range: 1 - 43
+Using email from git config: 73040912+Eccys@users.noreply.github.com
 
-🕳️ Gaps (>7 days):
-  2024-11-06 → 2024-11-21 (15 days)
-    Before: 13 commits | After: 6 commits
+📊 Statistics:
+  Total commits: 114
+  Days with commits: 32
+  Mean commits/day: 3.56
+  Standard deviation: 3.55
+  Range: 1 - 13
+
+🕳️ Gaps (>7 days): 11 gaps found
   
 📈 New distribution:
-  Days with commits: 312
-  Mean commits/day: 1.56
-  Standard deviation: 2.14
-  Range: 5 - 10
+  Days with commits: 23
+  Mean commits/day: 4.96
+  Standard deviation: 2.36
+  Range: 2 - 10
 ```
 
 ## Configuration
@@ -109,9 +126,21 @@ Edit the script to adjust parameters:
 
 ```python
 redistributor = ContributionRedistributor(
-    target_std_dev=7,    # Target standard deviation
-    max_gap_days=7       # Maximum allowed gap
+    target_std_dev=5,              # Target standard deviation (4-6 range)
+    max_gap_days=7,                # Maximum allowed gap
+    github_email="your@email.com" # Filter commits by email
 )
+```
+
+### Weekend/Weekday Ratio
+
+To adjust the weekend prioritization, edit lines 168-171 in the script:
+
+```python
+if is_weekend:
+    target_count = random.randint(6, 10)  # Weekend commits
+else:
+    target_count = random.randint(2, 6)   # Weekday commits
 ```
 
 ## Safety Features

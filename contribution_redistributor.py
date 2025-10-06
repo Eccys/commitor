@@ -14,9 +14,10 @@ from pathlib import Path
 import statistics
 
 class ContributionRedistributor:
-    def __init__(self, target_std_dev=7, max_gap_days=7):
+    def __init__(self, target_std_dev=5, max_gap_days=7, github_email=None):
         self.target_std_dev = target_std_dev
         self.max_gap_days = max_gap_days
+        self.github_email = github_email
         self.repos = []
         self.commits_by_date = defaultdict(list)
         self.redistribution_plan = {}
@@ -39,11 +40,11 @@ class ContributionRedistributor:
         # Get date from N days ago
         since_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
         
-        # Get commits with author date and hash
+        # Get commits with author date, hash, and email
         cmd = [
             'git', 'log',
             '--all',
-            '--pretty=format:%H|%aI|%s',
+            '--pretty=format:%H|%aI|%s|%ae',
             f'--since={since_date}'
         ]
         
@@ -55,15 +56,21 @@ class ContributionRedistributor:
                 if not line:
                     continue
                     
-                parts = line.split('|', 2)
-                if len(parts) >= 3:
-                    commit_hash, date_str, message = parts
+                parts = line.split('|', 3)
+                if len(parts) >= 4:
+                    commit_hash, date_str, message, author_email = parts
+                    
+                    # Filter by email if specified
+                    if self.github_email and author_email.lower() != self.github_email.lower():
+                        continue
+                    
                     commit_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                     
                     commits.append({
                         'hash': commit_hash,
                         'date': commit_date,
                         'message': message,
+                        'email': author_email,
                         'repo': repo_path,
                         'original_date': commit_date
                     })
@@ -121,7 +128,9 @@ class ContributionRedistributor:
         return stats, gaps, date_counts
     
     def create_redistribution_plan(self, date_counts):
-        """Create a plan to redistribute commits for uniform distribution."""
+        """Create a plan to redistribute commits with weekend prioritization."""
+        import random
+        
         # Get all commits sorted by date
         all_commits = []
         for commits in self.commits_by_date.values():
@@ -138,9 +147,6 @@ class ContributionRedistributor:
         total_days = (last_date - first_date).days + 1
         total_commits = len(all_commits)
         
-        # Target: spread commits evenly
-        target_per_day = total_commits / total_days
-        
         # Create ideal distribution
         current_date = first_date
         ideal_distribution = {}
@@ -149,19 +155,20 @@ class ContributionRedistributor:
             ideal_distribution[current_date] = []
             current_date += timedelta(days=1)
         
-        # Distribute commits
+        # Distribute commits with weekend prioritization
         commits_to_distribute = all_commits.copy()
         plan = {}
         
         for date in sorted(ideal_distribution.keys()):
-            # Calculate how many commits this day should have
-            # Aim for target_per_day, but adjust based on what's available
-            target_count = int(target_per_day)
+            random.seed(int(date.strftime('%Y%m%d')))
             
-            # Add some variation (5-10 range as requested)
-            import random
-            random.seed(int(date.strftime('%Y%m%d')))  # Consistent randomness
-            target_count = random.randint(5, 10)
+            # Weekend gets more commits (6-10), weekdays get fewer (2-6)
+            is_weekend = date.weekday() >= 5  # Saturday=5, Sunday=6
+            
+            if is_weekend:
+                target_count = random.randint(6, 10)
+            else:
+                target_count = random.randint(2, 6)
             
             # Don't go past our commit pool
             actual_count = min(target_count, len(commits_to_distribute))
@@ -346,7 +353,22 @@ class ContributionRedistributor:
 
 
 if __name__ == '__main__':
-    redistributor = ContributionRedistributor(target_std_dev=7, max_gap_days=7)
+    # Get GitHub email from git config or user input
+    github_email = None
+    try:
+        result = subprocess.run(['git', 'config', 'user.email'], 
+                              capture_output=True, text=True, check=True)
+        github_email = result.stdout.strip()
+        print(f"Using email from git config: {github_email}")
+    except:
+        print("Could not detect git email. All commits will be counted.")
+        print("To filter by email, run: git config --global user.email 'your@email.com'")
+    
+    redistributor = ContributionRedistributor(
+        target_std_dev=5, 
+        max_gap_days=7,
+        github_email=github_email
+    )
     
     # Use parent directory of current script location
     base_dir = sys.argv[1] if len(sys.argv) > 1 else str(Path.home() / 'git')
