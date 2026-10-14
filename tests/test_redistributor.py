@@ -72,3 +72,34 @@ def test_redistribution_plan_preserves_all_commits_on_single_day(tmp_path):
     assert log_file.exists()
     assert script_file.exists()
     assert "git filter-branch" in script_file.read_text(encoding="utf-8")
+
+
+def test_redistribution_plan_preserves_chronological_order_across_days(tmp_path):
+    from datetime import timedelta
+
+    r = ContributionRedistributor()
+    day1 = datetime(2026, 10, 12, 10, 0, tzinfo=timezone.utc)
+    day2 = day1 + timedelta(days=1)
+    commits = []
+    for i in range(30):
+        dt = day1 if i < 15 else day2
+        commits.append(
+            {
+                "hash": f"hash_{i:02d}",
+                "date": dt + timedelta(minutes=i),
+                "message": f"commit {i}",
+                "email": "user@example.com",
+                "repo": str(tmp_path / "repo1"),
+                "original_date": dt + timedelta(minutes=i),
+            }
+        )
+    r.commits_by_date["repo1"] = commits
+    _, _, date_counts = r.analyze_contributions()
+    plan = r.create_redistribution_plan(date_counts)
+    assert len(plan) == 30
+
+    assigned_dates = [plan[f"hash_{i:02d}"]["new_date"].date() for i in range(30)]
+    assert assigned_dates == sorted(assigned_dates), (
+        f"Expected monotonic chronological dates, got {assigned_dates}"
+    )
+

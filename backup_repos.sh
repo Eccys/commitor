@@ -12,8 +12,10 @@ echo "Source: $BASE_DIR"
 echo "Backup: $BACKUP_DIR"
 echo ""
 
-# Create backup directory
+# Create backup directory and resolve absolute paths
 mkdir -p "$BACKUP_DIR"
+BASE_DIR="$(cd "$BASE_DIR" && pwd)"
+BACKUP_DIR="$(cd "$BACKUP_DIR" && pwd)"
 
 # Find and backup all git repos
 for repo in "$BASE_DIR"/*; do
@@ -22,11 +24,9 @@ for repo in "$BASE_DIR"/*; do
         echo "📦 Backing up: $repo_name"
         
         # Create bundle (includes all branches, tags, etc.)
-        cd "$repo"
-        if git bundle create "$BACKUP_DIR/${repo_name}.bundle" --all 2>/dev/null; then
+        if (cd "$repo" && git bundle create "$BACKUP_DIR/${repo_name}.bundle" --all 2>/dev/null); then
             # Also create a tar backup
-            cd "$BASE_DIR"
-            tar -czf "$BACKUP_DIR/${repo_name}.tar.gz" "$repo_name" 2>/dev/null
+            (cd "$BASE_DIR" && tar -czf "$BACKUP_DIR/${repo_name}.tar.gz" "$repo_name" 2>/dev/null)
             
             echo "  ✓ Saved to $BACKUP_DIR/${repo_name}.*"
         else

@@ -161,60 +161,42 @@ class ContributionRedistributor:
             ideal_distribution[current_date] = []
             current_date += timedelta(days=1)
         
-        # Distribute commits with weekend prioritization
+        # Distribute commits with weekend prioritization while preserving chronological order
         commits_to_distribute = all_commits.copy()
         plan = {}
         sorted_dates = sorted(ideal_distribution.keys())
-        
+
+        day_counts = {}
         for date in sorted_dates:
             random.seed(int(date.strftime('%Y%m%d')))
-            
-            # Weekend gets more commits (6-10), weekdays get fewer (2-6)
             is_weekend = date.weekday() >= 5  # Saturday=5, Sunday=6
-            
-            if is_weekend:
-                target_count = random.randint(6, 10)
-            else:
-                target_count = random.randint(2, 6)
-            
-            # Don't go past our commit pool
-            actual_count = min(target_count, len(commits_to_distribute))
-            
+            day_counts[date] = random.randint(6, 10) if is_weekend else random.randint(2, 6)
+
+        total_planned = sum(day_counts.values())
+        if total_planned < len(commits_to_distribute):
+            deficit = len(commits_to_distribute) - total_planned
+            for idx in range(deficit):
+                day_counts[sorted_dates[idx % len(sorted_dates)]] += 1
+
+        for date in sorted_dates:
+            actual_count = min(day_counts[date], len(commits_to_distribute))
             if actual_count > 0:
-                # Take commits from the pool
                 day_commits = commits_to_distribute[:actual_count]
                 commits_to_distribute = commits_to_distribute[actual_count:]
-                
+
                 for commit in day_commits:
                     new_datetime = datetime.combine(
                         date,
                         commit['date'].time()
                     ).replace(tzinfo=commit['date'].tzinfo)
-                    
+
                     plan[commit['hash']] = {
                         'old_date': commit['date'],
                         'new_date': new_datetime,
                         'repo': commit['repo'],
                         'message': commit['message']
                     }
-        
-        # Ensure any remaining commits in the pool are distributed across the date range
-        idx = 0
-        while commits_to_distribute:
-            commit = commits_to_distribute.pop(0)
-            date = sorted_dates[idx % len(sorted_dates)]
-            idx += 1
-            new_datetime = datetime.combine(
-                date,
-                commit['date'].time()
-            ).replace(tzinfo=commit['date'].tzinfo)
-            plan[commit['hash']] = {
-                'old_date': commit['date'],
-                'new_date': new_datetime,
-                'repo': commit['repo'],
-                'message': commit['message']
-            }
-        
+
         return plan
     
     def print_analysis(self, stats, gaps, date_counts):
@@ -421,6 +403,7 @@ class ContributionRedistributor:
             return
         
         # Store commits by repo
+        self.commits_by_date.clear()
         for commit in all_commits:
             repo = commit['repo']
             if repo not in self.commits_by_date:

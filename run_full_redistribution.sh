@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║    GitHub Contribution Redistributor - Full Run           ║"
