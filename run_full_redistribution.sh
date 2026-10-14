@@ -64,11 +64,13 @@ echo ""
 echo "Checking first modified repository..."
 FIRST_REPO=$(grep "cd \"" rewrite_history.sh | head -n 1 | sed 's/cd "\(.*\)"/\1/')
 if [ -n "$FIRST_REPO" ]; then
-    cd "$FIRST_REPO"
-    echo "Repository: $(basename "$FIRST_REPO")"
-    echo "Recent commits:"
-    git log --oneline --date=short --pretty=format:"%h %ad %s" -10
-    echo ""
+    (
+        cd "$FIRST_REPO"
+        echo "Repository: $(basename "$FIRST_REPO")"
+        echo "Recent commits:"
+        git log --oneline --date=short --pretty=format:"%h %ad %s" -10
+        echo ""
+    )
 fi
 
 echo ""
@@ -93,12 +95,11 @@ fi
 
 echo ""
 echo "Pushing all modified repositories..."
-grep "cd \"" rewrite_history.sh | sed 's/cd "\(.*\)"/\1/' | while read repo; do
+grep "cd \"" rewrite_history.sh | sed 's/cd "\(.*\)"/\1/' | sort -u | while IFS= read -r repo; do
     if [ -d "$repo/.git" ]; then
         echo ""
         echo "📤 Pushing: $(basename "$repo")"
-        cd "$repo"
-        git push --force --all 2>&1 | head -n 5
+        (cd "$repo" && git push --force --all 2>&1 | head -n 5)
     fi
 done
 
