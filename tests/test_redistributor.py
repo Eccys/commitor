@@ -1,0 +1,74 @@
+import os
+import subprocess
+from datetime import datetime, timezone
+
+from contribution_redistributor import ContributionRedistributor
+
+
+def _init_repo_with_commit(repo_dir, message, email="user@example.com"):
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.email", email], cwd=repo_dir, check=True)
+    (repo_dir / "file.txt").write_text(message, encoding="utf-8")
+    subprocess.run(["git", "add", "file.txt"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=repo_dir, check=True, capture_output=True)
+
+
+def test_find_git_repos_parent_and_single_repo(tmp_path):
+    r = ContributionRedistributor()
+    assert r.find_git_repos(tmp_path / "does_not_exist") == []
+
+    repo_a = tmp_path / "repo_a"
+    repo_b = tmp_path / "repo_b"
+    _init_repo_with_commit(repo_a, "initial a")
+    _init_repo_with_commit(repo_b, "initial b")
+
+    found_multi = r.find_git_repos(tmp_path)
+    assert len(found_multi) == 2
+
+    found_single = r.find_git_repos(repo_a)
+    assert found_single == [str(repo_a.resolve())]
+
+
+def test_get_commits_preserves_cwd_and_pipe_messages(tmp_path):
+    orig_cwd = os.getcwd()
+    repo = tmp_path / "pipe_repo"
+    _init_repo_with_commit(repo, "feat: part A | part B | part C", email="Dev@Example.com")
+
+    r = ContributionRedistributor(github_email="dev@example.com")
+    commits = r.get_commits_from_repo(str(repo))
+    assert os.getcwd() == orig_cwd
+    assert len(commits) == 1
+    assert commits[0]["message"] == "feat: part A | part B | part C"
+    assert commits[0]["email"] == "Dev@Example.com"
+
+
+def test_redistribution_plan_preserves_all_commits_on_single_day(tmp_path):
+    r = ContributionRedistributor()
+    now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+    r.commits_by_date["repo1"] = [
+        {
+            "hash": f"hash_{i}",
+            "date": now,
+            "message": f"commit {i}",
+            "email": "user@example.com",
+            "repo": str(tmp_path / "repo1"),
+            "original_date": now,
+        }
+        for i in range(25)
+    ]
+    stats, gaps, date_counts = r.analyze_contributions()
+    assert stats["total_commits"] == 25
+    assert gaps == []
+
+    plan = r.create_redistribution_plan(date_counts)
+    assert len(plan) == 25
+
+    log_file = tmp_path / "log.txt"
+    script_file = tmp_path / "rewrite.sh"
+    r.save_detailed_log(plan, date_counts, output_file=str(log_file))
+    r.generate_rewrite_script(plan, output_file=str(script_file))
+    assert log_file.exists()
+    assert script_file.exists()
+    assert "git filter-branch" in script_file.read_text(encoding="utf-8")

@@ -13,6 +13,11 @@ from collections import defaultdict
 from pathlib import Path
 import statistics
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 class ContributionRedistributor:
     def __init__(self, target_std_dev=5, max_gap_days=7, github_email=None):
         self.target_std_dev = target_std_dev
@@ -23,33 +28,36 @@ class ContributionRedistributor:
         self.redistribution_plan = {}
         
     def find_git_repos(self, base_dir):
-        """Find all git repositories in the given directory."""
-        base_path = Path(base_dir)
+        """Find all git repositories in the given directory (or base_dir itself if it is a git repo)."""
+        base_path = Path(base_dir).expanduser().resolve()
+        if not base_path.exists():
+            return []
+        if base_path.is_dir() and (base_path / '.git').exists():
+            return [str(base_path)]
+
         repos = []
-        
-        for item in base_path.iterdir():
-            if item.is_dir() and (item / '.git').exists():
-                repos.append(str(item))
-        
+        if base_path.is_dir():
+            for item in sorted(base_path.iterdir()):
+                if item.is_dir() and (item / '.git').exists():
+                    repos.append(str(item))
+
         return repos
     
     def get_commits_from_repo(self, repo_path, days_back=365):
         """Extract all commits from a repository for the last N days."""
-        os.chdir(repo_path)
-        
         # Get date from N days ago
         since_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
         
-        # Get commits with author date, hash, and email
+        # Get commits with hash, author date, author email, and subject (%s last so '|' in messages is preserved)
         cmd = [
             'git', 'log',
             '--all',
-            '--pretty=format:%H|%aI|%s|%ae',
+            '--pretty=format:%H|%aI|%ae|%s',
             f'--since={since_date}'
         ]
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
             commits = []
             
             for line in result.stdout.strip().split('\n'):
@@ -58,7 +66,7 @@ class ContributionRedistributor:
                     
                 parts = line.split('|', 3)
                 if len(parts) >= 4:
-                    commit_hash, date_str, message, author_email = parts
+                    commit_hash, date_str, author_email, message = parts
                     
                     # Filter by email if specified
                     if self.github_email and author_email.lower() != self.github_email.lower():
@@ -71,7 +79,7 @@ class ContributionRedistributor:
                         'date': commit_date,
                         'message': message,
                         'email': author_email,
-                        'repo': repo_path,
+                        'repo': str(Path(repo_path).resolve()),
                         'original_date': commit_date
                     })
             
@@ -144,8 +152,6 @@ class ContributionRedistributor:
         # Get date range
         first_date = all_commits[0]['date'].date()
         last_date = all_commits[-1]['date'].date()
-        total_days = (last_date - first_date).days + 1
-        total_commits = len(all_commits)
         
         # Create ideal distribution
         current_date = first_date
@@ -158,8 +164,9 @@ class ContributionRedistributor:
         # Distribute commits with weekend prioritization
         commits_to_distribute = all_commits.copy()
         plan = {}
+        sorted_dates = sorted(ideal_distribution.keys())
         
-        for date in sorted(ideal_distribution.keys()):
+        for date in sorted_dates:
             random.seed(int(date.strftime('%Y%m%d')))
             
             # Weekend gets more commits (6-10), weekdays get fewer (2-6)
@@ -190,6 +197,23 @@ class ContributionRedistributor:
                         'repo': commit['repo'],
                         'message': commit['message']
                     }
+        
+        # Ensure any remaining commits in the pool are distributed across the date range
+        idx = 0
+        while commits_to_distribute:
+            commit = commits_to_distribute.pop(0)
+            date = sorted_dates[idx % len(sorted_dates)]
+            idx += 1
+            new_datetime = datetime.combine(
+                date,
+                commit['date'].time()
+            ).replace(tzinfo=commit['date'].tzinfo)
+            plan[commit['hash']] = {
+                'old_date': commit['date'],
+                'new_date': new_datetime,
+                'repo': commit['repo'],
+                'message': commit['message']
+            }
         
         return plan
     
@@ -287,7 +311,7 @@ class ContributionRedistributor:
         first_date = all_dates[0]
         last_date = all_dates[-1]
         
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write("GitHub Contribution Redistribution Log\n")
             f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write("="*70 + "\n\n")
@@ -362,7 +386,7 @@ class ContributionRedistributor:
             script_lines.append('')
         
         # Write script
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write('\n'.join(script_lines))
         
         os.chmod(output_file, 0o755)

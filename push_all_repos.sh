@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 echo "📤 Push All Modified Repositories to GitHub"
 echo "==========================================="
@@ -13,11 +14,11 @@ fi
 REPOS=$(grep 'cd "' rewrite_history.sh | sed 's/cd "\(.*\)"/\1/' | sort -u)
 
 echo "📋 Found repositories to push:"
-echo "$REPOS" | while read repo; do
+while IFS= read -r repo; do
     if [ -n "$repo" ]; then
         echo "  - $(basename "$repo")"
     fi
-done
+done <<< "$REPOS"
 
 echo ""
 echo "⚠️  WARNING: This will FORCE PUSH and rewrite remote history!"
@@ -33,21 +34,19 @@ echo ""
 SUCCESS=0
 FAILED=0
 
-echo "$REPOS" | while read repo; do
+while IFS= read -r repo; do
     if [ -n "$repo" ] && [ -d "$repo/.git" ]; then
         echo ""
         echo "📤 Pushing: $(basename "$repo")"
-        cd "$repo"
-        
-        if git push --force --all 2>&1 | head -n 10; then
-            ((SUCCESS++))
+        if (cd "$repo" && git push --force --all 2>&1 | head -n 10); then
+            SUCCESS=$((SUCCESS + 1))
             echo "  ✅ Success"
         else
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
             echo "  ❌ Failed"
         fi
     fi
-done
+done <<< "$REPOS"
 
 echo ""
 echo "╔════════════════════════════════════════╗"
