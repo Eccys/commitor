@@ -1,11 +1,15 @@
 import os
 from pathlib import Path
 import random
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 from contribution_redistributor import ContributionRedistributor
 
@@ -147,5 +151,55 @@ def test_empty_contributions_and_gap_detection(tmp_path):
     r.print_analysis(stats, gaps, date_counts)
     plan = r.create_redistribution_plan(date_counts)
     r.print_redistribution_plan(plan, date_counts)
+
+
+def test_generate_rewrite_script_rejects_shell_metacharacters_and_run_flow(tmp_path, monkeypatch):
+    r = ContributionRedistributor()
+    now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+    bad_hash_plan = {
+        'abc"; rm -rf / #': {
+            "old_date": now,
+            "new_date": now,
+            "repo": str(tmp_path / "repo1"),
+            "message": "msg",
+        }
+    }
+    with pytest.raises(ValueError, match="Unsafe commit hash"):
+        r.generate_rewrite_script(bad_hash_plan, output_file=str(tmp_path / "bad.sh"))
+
+    bad_repo_plan = {
+        "abc1234": {
+            "old_date": now,
+            "new_date": now,
+            "repo": '/tmp/repo"$inject',
+            "message": "msg",
+        }
+    }
+    with pytest.raises(ValueError, match="Unsafe repository path"):
+        r.generate_rewrite_script(bad_repo_plan, output_file=str(tmp_path / "bad2.sh"))
+
+    # End-to-end run() on empty directory and populated repo
+    monkeypatch.chdir(tmp_path)
+    empty_dir = tmp_path / "empty_base"
+    empty_dir.mkdir()
+    r.run(str(empty_dir))
+    assert not (tmp_path / "rewrite_history.sh").exists()
+
+    repo_dir = tmp_path / "sample_repo"
+    _init_repo_with_commit(repo_dir, "first commit", email="user@example.com")
+    r_full = ContributionRedistributor(github_email="user@example.com")
+    r_full.run(str(repo_dir))
+    assert (tmp_path / "redistribution_log.txt").exists()
+    assert (tmp_path / "rewrite_history.sh").exists()
+
+
+def test_shell_scripts_syntax_and_restore_validation():
+    for script in REPO_ROOT.glob("*.sh"):
+        content = script.read_text(encoding="utf-8")
+        assert content.startswith("#!/bin/bash")
+    restore_text = (REPO_ROOT / "restore_from_backup.sh").read_text(encoding="utf-8")
+    assert 'rm -rf "${REPO_PATH:?}"' in restore_text
+    push_text = (REPO_ROOT / "push_all_repos.sh").read_text(encoding="utf-8")
+    assert "PUSH_OUT=$(cd" in push_text
 
 

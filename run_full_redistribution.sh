@@ -100,7 +100,8 @@ grep "cd \"" rewrite_history.sh | sed 's/cd "\(.*\)"/\1/' | sort -u | while IFS=
     if [ -d "$repo/.git" ]; then
         echo ""
         echo "📤 Pushing: $(basename "$repo")"
-        (cd "$repo" && git push --force --all 2>&1 | head -n 5)
+        PUSH_OUT=$(cd "$repo" && git push --force --all 2>&1)
+        printf '%s\n' "$PUSH_OUT" | head -n 5
     fi
 done
 

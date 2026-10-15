@@ -38,10 +38,12 @@ while IFS= read -r repo; do
     if [ -n "$repo" ] && [ -d "$repo/.git" ]; then
         echo ""
         echo "📤 Pushing: $(basename "$repo")"
-        if (cd "$repo" && git push --force --all 2>&1 | head -n 10); then
+        if PUSH_OUT=$(cd "$repo" && git push --force --all 2>&1); then
+            printf '%s\n' "$PUSH_OUT" | head -n 10
             SUCCESS=$((SUCCESS + 1))
             echo "  ✅ Success"
         else
+            printf '%s\n' "$PUSH_OUT" | head -n 10
             FAILED=$((FAILED + 1))
             echo "  ❌ Failed"
         fi
