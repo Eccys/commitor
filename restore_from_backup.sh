@@ -7,8 +7,12 @@ if [ -z "$1" ] || [ -z "$2" ]; then
     exit 1
 fi
 
-BACKUP_DIR="$1"
-REPO_NAME="$2"
+BACKUP_DIR="$(cd "$1" && pwd)"
+REPO_NAME="$(basename "$2")"
+if [ -z "$REPO_NAME" ] || [ "$REPO_NAME" = "." ] || [ "$REPO_NAME" = ".." ]; then
+    echo "❌ Invalid repository name: $2"
+    exit 1
+fi
 REPO_PATH="$HOME/git/$REPO_NAME"
 
 echo "🔄 Restoring $REPO_NAME from backup..."
@@ -20,7 +24,7 @@ if [ ! -f "$BACKUP_DIR/${REPO_NAME}.bundle" ]; then
 fi
 
 echo "1️⃣ Removing current repository..."
-rm -rf "$REPO_PATH"
+rm -rf "${REPO_PATH:?}"
 
 echo "2️⃣ Restoring from bundle..."
 git clone "$BACKUP_DIR/${REPO_NAME}.bundle" "$REPO_PATH"
