@@ -7,6 +7,7 @@ Analyzes commit history and redistributes commits to fill gaps and maintain cons
 import subprocess
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -352,7 +353,12 @@ class ContributionRedistributor:
         # Group by repo
         by_repo = defaultdict(list)
         for commit_hash, info in plan.items():
-            by_repo[info['repo']].append((commit_hash, info))
+            if not re.fullmatch(r'[0-9A-Za-z_-]+', str(commit_hash)):
+                raise ValueError(f"Unsafe commit hash in redistribution plan: {commit_hash!r}")
+            repo_str = str(info['repo'])
+            if any(ch in repo_str for ch in ('"', '$', '`', '\n', '\r', ';')):
+                raise ValueError(f"Unsafe repository path in redistribution plan: {repo_str!r}")
+            by_repo[repo_str].append((str(commit_hash), info))
         
         for repo, commits in by_repo.items():
             script_lines.append(f'echo "Processing {repo}..."')
@@ -462,7 +468,7 @@ if __name__ == '__main__':
                               capture_output=True, text=True, check=True)
         github_email = result.stdout.strip()
         print(f"Using email from git config: {github_email}")
-    except:
+    except (subprocess.CalledProcessError, OSError):
         print("Could not detect git email. All commits will be counted.")
         print("To filter by email, run: git config --global user.email 'your@email.com'")
     
