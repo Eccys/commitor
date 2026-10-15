@@ -84,7 +84,7 @@ class ContributionRedistributor:
                     })
             
             return commits
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, OSError) as e:
             print(f"Error reading commits from {repo_path}: {e}")
             return []
     
@@ -168,9 +168,9 @@ class ContributionRedistributor:
 
         day_counts = {}
         for date in sorted_dates:
-            random.seed(int(date.strftime('%Y%m%d')))
+            rng = random.Random(int(date.strftime('%Y%m%d')))
             is_weekend = date.weekday() >= 5  # Saturday=5, Sunday=6
-            day_counts[date] = random.randint(6, 10) if is_weekend else random.randint(2, 6)
+            day_counts[date] = rng.randint(6, 10) if is_weekend else rng.randint(2, 6)
 
         total_planned = sum(day_counts.values())
         if total_planned < len(commits_to_distribute):
@@ -229,6 +229,11 @@ class ContributionRedistributor:
         print("REDISTRIBUTION PLAN")
         print("="*60)
         
+        if not plan:
+            print("\nTotal commits to redistribute: 0")
+            print("\n" + "="*60)
+            return
+
         # Group by date
         by_new_date = defaultdict(list)
         for commit_hash, info in plan.items():
@@ -290,6 +295,13 @@ class ContributionRedistributor:
             by_new_date[info['new_date'].date()].append(info)
         
         all_dates = sorted(by_new_date.keys())
+        if not all_dates:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write("GitHub Contribution Redistribution Log\n")
+                f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("="*70 + "\n\nNo commits in redistribution plan.\n")
+            print(f"\n📝 Detailed log saved to: {output_file}")
+            return
         first_date = all_dates[0]
         last_date = all_dates[-1]
         
